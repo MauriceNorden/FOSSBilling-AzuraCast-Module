@@ -41,6 +41,9 @@ class Server_Manager_AzuraCast extends Server_Manager
      */
     public function init()
     {
+        if (empty($this->_config['host'])) {
+            throw new Server_Exception('The ":server_manager" server manager is not fully configured. Please configure the :missing', [':server_manager' => 'DirectAdmin', ':missing' => 'hostname'], 2001);
+        }
     }
 
 
@@ -53,7 +56,8 @@ class Server_Manager_AzuraCast extends Server_Manager
      */
     public function getLoginUrl(?Server_Account $account = null): string
     {
-        return 'https://' . $this->_config['host'] . ':' . $this->getPort() . '/';
+
+        return 'https://' . $this->_config['host'] . ':' . $this->getPort();
     }
 
     public function getPort(): int|string
@@ -125,6 +129,7 @@ class Server_Manager_AzuraCast extends Server_Manager
     public function createAccount(Server_Account $account): bool
 {
     $client = $account->getClient();
+   
 
     /** 1. Station aanmaken */
     $station = $this->request('POST', '/api/admin/stations', [
@@ -155,9 +160,12 @@ class Server_Manager_AzuraCast extends Server_Manager
         throw new Server_Exception('Failed to create AzuraCast role');
     }
 
+    /** Check If User Exist **/
+
+    /** If user exists, append role of new station**/
 
 
-    /** 3. User aanmaken */
+    /** else create User */
     $user = $this->request('POST', '/api/admin/users', [
         'email' => $client->getEmail(),
         'name'  => trim((string) $client->getFullName()),
@@ -167,7 +175,11 @@ class Server_Manager_AzuraCast extends Server_Manager
     if (!isset($user['id'])) {
         throw new Server_Exception('Failed to create AzuraCast user');
     }
- $this->getLog()->info('Creating shared hosting account');
+
+    /*write azuracast id to client AID table*/
+     $account->setId($user['id']);
+    $this->getLog()->info('Creating shared hosting account');
+    
     return true;
 }
 
@@ -225,11 +237,13 @@ class Server_Manager_AzuraCast extends Server_Manager
      *
      * @return bool returns true if the account is successfully cancelled
      */
+
 public function cancelAccount(Server_Account $account): bool
 {
-    $stationId = $account->getMeta('azuracast_station_id');
-    $userId    = $account->getMeta('azuracast_user_id');
-    $roleId    = $account->getMeta('azuracast_role_id');
+    $client = $account->getClient();
+    $stationId = $this->getMeta($client->getEmail())['azuracast_station_id'];
+    $userId    = $this->getMeta($client->getEmail())['azuracast_user_id'];
+    $roleId    = $this->getMeta($client->getEmail())['azuracast_role_id'];
 
     if ($userId) {
         $this->request('DELETE', '/api/admin/user/' . $userId);
@@ -366,12 +380,9 @@ public function changeAccountPassword(Server_Account $account, string $newPasswo
      * 
      */
 
-private function getMeta(
+private function getMeta(string $email
     ){
 
-
-    $client = $account->getClient();
-    $userId = $this->getMeta($client->getEmail())['azuracast_user_id'];
     //working
     $users = $this->request('GET', '/api/admin/users', []);
     $roles = $this->request('GET', '/api/admin/roles', []);
@@ -409,7 +420,7 @@ private function getMeta(
     }
 
     /** 3️⃣ Uniek maken */
-    $stationIds = array_values(array_unique($stationIds));
+    #$stationIds = array_values(array_unique($stationIds));
 
     return [
         'azuracast_user_id' => $userId,

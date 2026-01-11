@@ -1,0 +1,4 @@
+#ignore templates / examples
+dev/
+
+.vscode/
