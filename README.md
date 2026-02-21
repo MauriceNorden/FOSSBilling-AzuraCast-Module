@@ -44,12 +44,13 @@ Place `AzuraCast.php` in `/var/www/html/library/Server/Manager/`
 - Save the form and test the Connection.
 
 # Docs - Creating custom plans:
-Custom plans is not yet implemented, but when it is, the following properties will be avalible:
+Custom plans can be applied **only when creating a new account** at this time.
+Adding the custom values can be done in FOSSbilling at `System-> Hosting Subscriptions and Servers-> New plan-> Servermanager specific parameters `
 
 | Property    | type |
 | -------- | ------- |
 | administerAll  | Boolean   |
-| viewStationManagment | Boolean     |
+| viewStationManagement | Boolean     |
 | viewStationReports | Boolean   |
 | viewStationLogs | Boolean   |
 | manageStationProfile | Boolean   |

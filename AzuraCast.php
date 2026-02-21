@@ -56,9 +56,20 @@ class Server_Manager_AzuraCast extends Server_Manager
      */
     public function getLoginUrl(?Server_Account $account = null): string
     {
+        if(!$account){
+            return 'https://' . $this->_config['host'] . ':' . $this->getPort();
+        }else{
+            $client = $account->getClient();
+            $userId = $this->getMeta($client->getEmail())["azuracast_user_id"];
+            $loginLink = $this->request('POST', '/api/admin/login_tokens', [
+            "user" =>  $userId,
+            "type" =>  "login",
+            "comment" =>  "eduser-request-29-12-2025 13:02",
+            ]);
 
-        return 'https://' . $this->_config['host'] . ':' . $this->getPort();
-    }
+            return $loginLink['links']['login'];
+        }
+        }
 
     public function getPort(): int|string
     {
@@ -81,6 +92,7 @@ class Server_Manager_AzuraCast extends Server_Manager
     public function getResellerLoginUrl(?Server_Account $account = null): string
     {
         return $this->getLoginUrl();
+
     }
 
     /**
@@ -111,13 +123,20 @@ class Server_Manager_AzuraCast extends Server_Manager
      */
     public function synchronizeAccount(Server_Account $account): Server_Account
     {
+        $client = $account->getClient();
         $this->getLog()->info('Synchronizing account with server ' . $account->getUsername());
 
         // @example - retrieve username from server and set it to cloned object
-        // $new->setUsername('newusername');
-        return clone $account;
+   
+
+                $new = clone $account;
+     $new->setUsername($client->getEmail());
+
+        return $new;
+    
     }
 
+        
     /**
      * Creates a new account on the server.
      *
@@ -126,10 +145,15 @@ class Server_Manager_AzuraCast extends Server_Manager
      * @return bool returns true if the account is successfully created
      */
 
-    public function createAccount(Server_Account $account): bool
+public function createAccount(Server_Account $account): bool
 {
+    // Get the client and package associated with the account
     $client = $account->getClient();
-   
+    $package = $account->getPackage();
+
+ 
+    //parse packe in custom function to create array of role[s.]
+   $roles = $this->createRoleBody($package);
 
     /** 1. Station aanmaken */
     $station = $this->request('POST', '/api/admin/stations', [
@@ -141,16 +165,17 @@ class Server_Manager_AzuraCast extends Server_Manager
     }
 
     $stationId = $station['id'];
+    $stationName = $station['name'];
 
     /** 2. Role aanmaken (alleen voor dit station) */
     $role = $this->request('POST', '/api/admin/roles', [
-        'name' => 'station_' . $stationId,
+        'name' => $stationName,
         'permissions' => [
             'global' => [],
             'station' => [
                 [
                     'id' => $stationId,
-                    'permissions' => ['administer all'],
+                    'permissions' => $roles,
                 ],
             ],
         ],
@@ -159,26 +184,37 @@ class Server_Manager_AzuraCast extends Server_Manager
     if (!isset($role['id'])) {
         throw new Server_Exception('Failed to create AzuraCast role');
     }
+    $roleId = $role['id'];
 
-    /** Check If User Exist **/
-
-    /** If user exists, append role of new station**/
-
-
-    /** else create User */
-    $user = $this->request('POST', '/api/admin/users', [
+    /** If user non existant because azuracast userid is null default create account **/
+    if(!$this->getMeta($client->getEmail())["azuracast_user_id"]){
+        $user = $this->request('POST', '/api/admin/users', [
         'email' => $client->getEmail(),
-        'name'  => trim((string) $client->getFullName()),
+        'name'  => $client->getFullName(),
         'roles' => [(string) $role['id']],
     ]);
 
-    if (!isset($user['id'])) {
+    if (isset($user['id'])) {
+
+      
+        //throw new Server_Exception('client id:' . $client->getId());
+            //Log to FOSSBilling
+        $this->getLog()->info('Created station: user already active');
+        return true;
+
+        }else{
         throw new Server_Exception('Failed to create AzuraCast user');
+        }
     }
 
-    /*write azuracast id to client AID table*/
-     $account->setId($user['id']);
-    $this->getLog()->info('Creating shared hosting account');
+    //when user already present in azuracast append roleID for newly created station:
+
+
+
+
+
+
+    $this->getLog()->info('Created station and user:');
     
     return true;
 }
@@ -213,7 +249,7 @@ class Server_Manager_AzuraCast extends Server_Manager
 
     public function unsuspendAccount(Server_Account $account): bool
 {
-    $stationId = $account->getExternalId();
+    $stationId = $account->getId();
 
     if (!$stationId) {
         throw new Server_Exception('Missing AzuraCast station ID');
@@ -380,8 +416,7 @@ public function changeAccountPassword(Server_Account $account, string $newPasswo
      * 
      */
 
-private function getMeta(string $email
-    ){
+private function getMeta(string $email){
 
     //working
     $users = $this->request('GET', '/api/admin/users', []);
@@ -421,12 +456,17 @@ private function getMeta(string $email
 
     /** 3️⃣ Uniek maken */
     #$stationIds = array_values(array_unique($stationIds));
-
+   if (!$userId) {
+    return false;
+   }
+   else{
     return [
-        'azuracast_user_id' => $userId,
-        'azuracast_role_id' => $roleIds,
-        'azuracast_station_id' => $stationIds,
-    ];
+            'azuracast_user_id' => $userId,
+            'azuracast_role_id' => $roleIds,
+            'azuracast_station_id' => $stationIds,
+        ];
+   }
+   
 }
 
 
@@ -437,13 +477,9 @@ private function getMeta(string $email
  *
  * @throws Server_Exception
  */
-private function request(
-    string $method,
-    string $endpoint,
-    array $payload = null
-): mixed {
-
+private function request(string $method,string $endpoint,array $payload = null): mixed {
     $url = 'https://' . $this->_config['host'] . ':' . $this->getPort() . $endpoint;
+
     $client = $this->getHttpClient()->withOptions([
         'auth_bearer' => $this->_config['accesshash'],
         'verify_peer' => false,
@@ -452,13 +488,10 @@ private function request(
     ]);
 
 
-           
     if ($payload !== null) {
         $options['json'] = $payload;
 
 }
-
-
     $response = $client->request($method, $url, [
         'body' => $payload
     ]);
@@ -486,7 +519,41 @@ private function request(
         );
     }
 
-    return $decoded ?? [];
+  return $decoded ?? [];
+}
+
+/*half backed and stolen from WHM server manger.*/
+private function createRoleBody(Server_Package $package): mixed
+{
+    $permissions = [
+        'viewStationManagement',
+        'viewStationReports',
+        'viewStationLogs',
+        'manageStationProfile',
+        'manageStationBroadcasting',
+        'manageStationStreamers',
+        'manageStationMounts',
+        'manageStationRemotes',
+        'manageStationMedia',
+        'deleteStationMedia',
+        'manageStationAutomation',
+        'manageStationWebhooks',
+        'manageStationPodcasts',
+    ];
+
+    $enabled = [];
+
+    foreach ($permissions as $permission) {
+        if ($package->getCustomValue($permission) === 'true') {
+            $addSpace = preg_replace('/(?<!\ )[A-Z]/', ' $0', $permission);
+            $formatted = strtolower($addSpace);
+            $enabled[] = $formatted;
+        }
+    }
+
+    return $enabled;
+}
 
 
-}}
+
+}
