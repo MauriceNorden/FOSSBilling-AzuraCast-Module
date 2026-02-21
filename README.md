@@ -8,15 +8,19 @@ AzuraCast: v0.23.2
 FOSSBilling: 0.7.2
 
 # What does work:
-- Adding a server
+- Adding a server.
 - Testing server connection
 - Creating a new station, account, and role.
-- Changing password of account
+- Creating custom roles based on custom hosting plan variables.
+- Changing password of account.
+- Logging in with a login token.
 
 # What doesn't work:
-- Creating and changing customized packages
-- Suspending and Unsuspending
+- Changing packages
+- Suspending and unsuspending
 - Changing usernames
+- Removing accounts stations and roles.
+- Syncing accounts
 
 # How to install alpha:
 Place `AzuraCast.php` in `/var/www/html/library/Server/Manager/`
